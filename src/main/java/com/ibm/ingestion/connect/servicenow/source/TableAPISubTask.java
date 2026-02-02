@@ -49,30 +49,70 @@ public class TableAPISubTask {
     private TableQueryPartition SOURCE_PARTITION;
     private IServiceNowTablePartitioner DESTINATION_PARTITIONER;
 
+    /**
+     * Safely extracts a string value from a field that might be:
+     * 1. A simple string (when display_value=false or display_value=true)
+     * 2. A nested object with "value" and "display_value" (when display_value=all)
+     * 3. Null or missing
+     *
+     * This always extracts the "value" field (the sys_id or actual value), not the display_value.
+     *
+     * @param record The JSONObject containing the field
+     * @param fieldName The name of the field to extract
+     * @return The string value, or null if not present
+     * @throws ConnectException if the field format is unexpected
+     */
     private String extractStringField(JSONObject record, String fieldName) {
+        if (!record.has(fieldName) || record.isNull(fieldName)) {
+            return null;
+        }
+
         Object field = record.get(fieldName);
 
+        // Handle simple string value (display_value=false or display_value=true)
         if (field instanceof String) {
             return (String) field;
         }
 
+        // Handle nested object with value/display_value (display_value=all)
         if (field instanceof JSONObject) {
             JSONObject obj = (JSONObject) field;
             if (obj.has("value")) {
-                return obj.getString("value");
+                Object valueField = obj.get("value");
+                if (valueField == null || JSONObject.NULL.equals(valueField)) {
+                    return null;
+                }
+                return valueField.toString();
             }
+
+            // If it's a JSONObject but doesn't have "value", it's unexpected
+            throw new ConnectException(
+                    "Field '" + fieldName + "' is a JSONObject but missing 'value' field. " +
+                    "Object: " + obj.toString()
+            );
         }
 
         throw new ConnectException(
-                "Unsupported format for field '" + fieldName + "': " + field
+                "Unsupported format for field '" + fieldName + "': " + field.getClass().getName() +
+                ". Expected String or JSONObject with 'value' field. Actual value: " + field
         );
     }
 
     /**
      * Extracts and parses a ServiceNow UTC timestamp safely.
+     * Handles both simple string format and nested object format.
+     *
+     * @param record The JSONObject containing the timestamp field
+     * @param fieldName The name of the timestamp field
+     * @return LocalDateTime representing the timestamp
      */
     private LocalDateTime extractTimestampField(JSONObject record, String fieldName) {
         String rawTimestamp = extractStringField(record, fieldName);
+        if (rawTimestamp == null) {
+            throw new ConnectException(
+                    "Timestamp field '" + fieldName + "' is null or missing in record: " + record
+            );
+        }
         return Helpers.parseServiceNowDateTimeUtc(rawTimestamp);
     }
 
@@ -96,6 +136,7 @@ public class TableAPISubTask {
 
         this.SOURCE_PARTITION = sourcePartition;
         final String tableKey = this.SOURCE_PARTITION.getTableName();
+
         // Required connector configurations with no defaults
         final String TABLE_NAME_KEY = String.format("table.whitelist.%s.name", tableKey);
         this.TABLE_NAME = config.getString(TABLE_NAME_KEY);
@@ -171,13 +212,17 @@ public class TableAPISubTask {
         List<SourceRecord> records = new ArrayList<>(batch.size());
         LocalDateTime lastProcessedTimestamp = null;
         String lastProcessedIdentifier = null;
+
         for(JSONObject result : batch) {
 
-            // NOTE(Millies): dynamic building of the value schema. Not sure if this is going to cause an issue.
+            // Build schema dynamically from the first record
+            // This handles both display_value=false (simple strings) and display_value=all (nested objects)
             if(this._cachedValueSchema == null && result != null) {
                 this._cachedValueSchema = buildSchemaFromSimpleJsonRecord(result);
+                LOG.info("Built schema for table [{}]: {}", TABLE_NAME, this._cachedValueSchema);
             }
 
+            // Extract timestamp and identifier (always using the "value", not "display_value")
             lastProcessedTimestamp = extractTimestampField(result, this.TIMESTAMP_COLUMN_FIELD);
             lastProcessedIdentifier = extractStringField(result, this.IDENTIFIER_COLUMN_FIELD);
 
@@ -211,21 +256,11 @@ public class TableAPISubTask {
             lastSeenTimestamp = nowUtc.minusHours(initialDelayHours).toInstant(ZoneOffset.UTC);
         }
 
-        // NOTE(millies): As a result of us shifting the through date back, I don't see why we would need to
-        // substract from our last observed timestamp.
-        // ASSUMPTION: If a updated timestamp "A" has been generated by the source system, all subsequent updated
-        // timestamps "B" are guaranteed to be greater than or equal to "A".
-        // "B" >= "A"
-//        final long fromGracePeriodSeconds = this.TIMESTAMP_DELAY_INTERVAL_SECONDS;
-//        lastSeenTimestamp = lastSeenTimestamp.minusSeconds(fromGracePeriodSeconds);
-
-        //System.out.println(String.format("Last Seen Timestamp: %s", lastSeenTimestamp.atOffset(ZoneOffset.UTC)));
         return LocalDateTime.ofInstant(lastSeenTimestamp, ZoneOffset.UTC);
     }
 
     private LocalDateTime getThroughDateTimeUtc() {
         final LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
-
         final int timestampDelaySeconds = this.TIMESTAMP_DELAY_INTERVAL_SECONDS;
         return nowUtc.minusSeconds(timestampDelaySeconds);
     }
@@ -241,40 +276,15 @@ public class TableAPISubTask {
     }
 
     private TableAPIQueryBuilder buildQueryUnboundedQuery(LocalDateTime throughDateTimeUtc) {
-
         TableAPIQueryBuilder unboundedQuery = TableAPIQueryBuilder.Builder();
-
-        // NOTE(millies): filter out any records with no value for the identifier field.
         unboundedQuery.whereIsNotEmpty(this.IDENTIFIER_COLUMN_FIELD);
-
         unboundedQuery
                 .orderByAsc(this.TIMESTAMP_COLUMN_FIELD)
                 .orderByAsc(this.IDENTIFIER_COLUMN_FIELD);
-
         return unboundedQuery;
     }
 
-    /**
-     * Query:
-     *  SELECT
-     *      *
-     *  FROM
-     *      "TABLE"
-     *  WHERE
-     *      (@lastSeenTimestamp != null
-     *          AND "TIMESTAMP_FIELD" = @lastSeenTimestamp
-     *          AND (@lastSeenIdentifier = null OR "IDENTIFIER_FIELD" > @lastSeenIdentifier))
-     *      OR (
-     *          "TIMESTAMP_FIELD" > @lastSeenTimestamp
-     *          AND "TIMESTAMP_FIELD" <= @throughTimestamp
-     *      )
-     *  ORDER BY
-     *      "TIMESTAMP_FIELD" ASC
-     *      "IDENTIFIER_FIELD" ASC
-     * @return
-     */
     private TableAPIQueryBuilder buildQueryBoundedQuery(LocalDateTime fromDateTimeUtc, LocalDateTime throughDateTimeUtc) {
-
         TableAPIQueryBuilder lastSeenTimestampEqualsQuery = TableAPIQueryBuilder.Builder();
 
         lastSeenTimestampEqualsQuery.whereTimestampEquals(this.TIMESTAMP_COLUMN_FIELD, fromDateTimeUtc);
@@ -283,7 +293,6 @@ public class TableAPISubTask {
             lastSeenTimestampEqualsQuery.whereGreaterThan(this.IDENTIFIER_COLUMN_FIELD, lastSeenIdentifier);
         }
 
-        // NOTE(millies): filter out any records with no value for the identifier field.
         lastSeenTimestampEqualsQuery.whereIsNotEmpty(this.IDENTIFIER_COLUMN_FIELD);
 
         TableAPIQueryBuilder timestampWindowQuery = TableAPIQueryBuilder.Builder();
