@@ -14,7 +14,7 @@ particular `source_table` within the Kafka Connect ServiceNow Source Connector's
 
 ### Specifying Source Tables
 
-The source table configuration is provided by first specifying a comma delimited list of
+The source table configuration is provided by first specifying a comma-delimited list of
 `table_config_key(s)`. Each `table_config_key` is used to specify `source table` specific
 configuration properties.
 
@@ -64,8 +64,8 @@ messages about a particular entity go to the same partition.
 
 Configuration | Default | Notes
 :------- | :------- | :-------
-table.whitelist | none | A list of source table keys to use in subsequent, table specific, configurations. This keys are also used when calculating the `target kafka topic` for a particular `source table`.
-topic.prefix | none | The prefix to use when publishing messages for source tables. For example if the prefix is `ibm.test.servicenow`, and the `source table key` is `changerequest`, then the calculated topic will be `ibm.test.servicenow.changerequest`.This is a required setting and has no default value provided.
+table.whitelist | none | A list of source table keys to use in subsequent, table specific, configurations. These keys are also used when calculating the `target kafka topic` for a particular `source table`.
+topic.prefix | none | The prefix to use when publishing messages for source tables. For example, if the prefix is `ibm.test.servicenow`, and the `source table key` is `changerequest`, then the calculated topic will be `ibm.test.servicenow.changerequest`. This is a required setting and has no default value provided.
 
 #### ServiceNow Table API Authentication Configuration
 Configuration | Default | Notes
@@ -74,7 +74,7 @@ servicenow.client.oauth.path | `/oauth_token.do` | The path to use when logging 
 servicenow.client.oauth.clientid | none | The OAuth Client ID to use when authenticating. This is a required field and no default is provided.
 servicenow.client.oauth.clientsecret | none | The OAuth Client Secret to use when authenticating.
 servicenow.client.oauth.username | none | The OAuth User Name to use when authenticating.
-servicenow.client.oauth.userpassword | none | the OAuth User Password to use when Authenticating.
+servicenow.client.oauth.userpassword | none | The OAuth User Password to use when Authenticating.
 
 #### Connector to ServiceNow HTTP Client Configuration
 
@@ -85,11 +85,11 @@ Configuration  | Default | Notes
 servicenow.client.connection.timeout.seconds | 30 | The amount of time in seconds to wait for establishing a connection.
 servicenow.client.request.timeout.seconds | 30 | The overall timeout for any call. This configuration is independent of the read, and write timeouts.
 servicenow.client.read.timeout.seconds | 30 | The amount of time in seconds to wait for a read operation to complete.
-servicenow.client.request.retries.max | none | The number of times a http call will be retried for an IO exception. If this setting is excluded, then the task will continuously retry http calls.
+servicenow.client.request.retries.max | none | The number of times an HTTP call will be retried for an IO exception. If this setting is excluded, then the task will continuously retry HTTP calls.
 servicenow.client.request.retries.backoff.seconds | 30 | The amount of time delayed between retries.
 servicenow.client.connection.pool.max.idle.connections | 2 | The maximum number of idle connections to hold in the connection pool.
 servicenow.client.connection.pool.keep.alive.duration.seconds | 60 | The amount of time to hold onto idle connections in the connection pool.
-
+servicenow.client.display.value | `false` | **NEW:** Controls the format of field values returned from ServiceNow. Options: `false` (default, returns sys_id values only), `true` (returns display values only), `all` (returns both sys_id and display values). When set to `all`, reference fields will include both the internal sys_id and the human-readable display value. See [Display Value Configuration](#display-value-configuration) for more details.
 
 #### Connector Subtask Configuration
 
@@ -98,19 +98,80 @@ Subtask Implementation: `com.ibm.ingestion.connect.servicenow.source.TableAPISub
 Configuration  | Default | Notes
 :------------- | :------------ | :------------
 task.poll.batch.max.size | 20 | The maximum number of records to retrieve from ServiceNow per call. This setting applies to each SubTask individually. For instance, if you have `two tables` being watched, and a `max batch of 20`, then for each polling cycle the connector task will have at most `20 * 2 = 40` records in memory before publishing to the target stream.
-task.poll.fast.interval.ms | 500 | The amount of time between http requests to ServiceNow when the most recent call returned data. This setting combined with the max batch size setting directly translates to the maximum possible throughput for this connector.
-task.poll.slow.interval.ms | 30000 | The amount of time between http requests to ServiceNow when the most recent call returned no data. This setting directly translates to the how long it takes for a change in ServiceNow to be surfaced in target stream.
+task.poll.fast.interval.ms | 500 | The amount of time between HTTP requests to ServiceNow when the most recent call returned data. This setting combined with the max batch size setting directly translates to the maximum possible throughput for this connector.
+task.poll.slow.interval.ms | 30000 | The amount of time between HTTP requests to ServiceNow when the most recent call returned no data. This setting directly translates to how long it takes for a change in ServiceNow to be surfaced in the target stream.
 timestamp.initial.query.hours.ago | none | When a subtask fires up and does not have an existing offset to start from, this setting determines the date from which it will start pulling records. When this setting is excluded, the task starts with the earliest timestamp available in the `source table`.
-through.timestamp.delay.interval.seconds | 0 | The amount of time between when a record in the source table is updated, and when it will be picked up by the connector query. For example, if this setting is 10 seconds, then an updated record will "cooldown" for at least 10 seconds before the connector will pick it up. This is useful if one is consuming from multiple tables that have relationships and wants to provide time for any source transactions to complete.
+through.timestamp.delay.interval.seconds | 0 | The amount of time between when a record in the source table is updated, and when it will be picked up by the connector query. For example, if this setting is 10 seconds, then an updated record will "cool down" for at least 10 seconds before the connector will pick it up. This is useful if one is consuming from multiple tables that have relationships and wants to provide time for any source transactions to complete.
 table.whitelist.`<table config id>`.name | none | The name of the source table in ServiceNow TableAPI.
 table.whitelist.`<table config id>`.timestamp.field.name | none | The name of the column in the source table pertaining to the last updated time for each record.
 table.whitelist.`<table config id>`.identifier.field.name | none | The name of the column in the source table uniquely identifying the record.
-table.whitelist.`<table config id>`.fields | none | A comma delimited list of fields or columns to pull from the source table. By default all available fields or columns are retrieved.
-table.whitelist.`<table config id>`.partition.type | none | The partitioning type to use when selecting destination kafka topic partitions for records. See the readme section about partitioning types. When this setting is excluded, the `default` partition type is used.
-table.whitelist.`<table config id>`.partition.fields | none | Only valid for partitioning-type of `field-based`. This setting determines the fields on the `source table` to use as the partitioning key for selecting destination kafka topic partitions for records.
+table.whitelist.`<table config id>`.fields | none | A comma-delimited list of fields or columns to pull from the source table. By default, all available fields or columns are retrieved.
+table.whitelist.`<table config id>`.partition.type | none | The partitioning type to use when selecting destination Kafka topic partitions for records. See the readme section about partitioning types. When this setting is excluded, the `default` partition type is used.
+table.whitelist.`<table config id>`.partition.fields | none | Only valid for partitioning-type of `field-based`. This setting determines the fields on the `source table` to use as the partitioning key for selecting destination Kafka topic partitions for records.
 
+### Display Value Configuration
 
-```$json
+The `servicenow.client.display.value` parameter controls how ServiceNow returns field values, particularly for reference fields (fields that reference other tables).
+
+#### Understanding Display Values
+
+In ServiceNow:
+- **Actual values** are typically sys_ids (32-character unique identifiers like `d71f7935c0a8016700802b64c67c11c6`)
+- **Display values** are human-readable text (like "John Doe" or "Hardware Issue")
+
+#### Configuration Options
+
+| Value | Behavior | Use Case | Example Response |
+|-------|----------|----------|------------------|
+| `false` (default) | Returns only actual values (sys_ids) | When you need the raw database values for processing or lookups | `{"assigned_to": "d71f7935c0a8016700802b64c67c11c6"}` |
+| `true` | Returns only display values | When you need human-readable data and don't need the sys_ids | `{"assigned_to": "John Doe"}` |
+| `all` | Returns both actual and display values | When you need both the sys_id for lookups AND the display value for readability | `{"assigned_to": {"display_value": "John Doe", "value": "d71f7935c0a8016700802b64c67c11c6"}}` |
+
+#### Example Configuration
+
+**To get all information (both sys_ids and display values):**
+```json
+{
+  "name": "servicenow-connector",
+  "config": {
+    "servicenow.client.base.uri": "https://your-instance.service-now.com",
+    "servicenow.client.display.value": "all",
+    "table.whitelist": "incident",
+    ...other configuration...
+  }
+}
+```
+
+**Default behavior (only sys_ids):**
+```json
+{
+  "name": "servicenow-connector",
+  "config": {
+    "servicenow.client.base.uri": "https://your-instance.service-now.com",
+    "servicenow.client.display.value": "false",
+    ...other configuration...
+  }
+}
+```
+
+Or simply omit the parameter to use the default:
+```json
+{
+  "name": "servicenow-connector",
+  "config": {
+    "servicenow.client.base.uri": "https://your-instance.service-now.com",
+    ...other configuration...
+  }
+}
+```
+
+#### Recommendation
+
+For most use cases, we recommend using `"all"` to preserve both the internal sys_id (for data integrity and lookups) and the display value (for human readability and reporting).
+
+### Complete Configuration Example
+
+```json
 {
     "name": "milz-servicenow-connector",
     "config": {
@@ -119,6 +180,7 @@ table.whitelist.`<table config id>`.partition.fields | none | Only valid for par
         "servicenow.client.oauth.clientsecret": "clientsecret",
         "servicenow.client.oauth.username": "someusername",
         "servicenow.client.oauth.userpassword": "someuserpassword",
+        "servicenow.client.display.value": "all",
         "table.whitelist": "case",
         "table.whitelist.case.name": "sn_customerservice_case",
         "table.whitelist.case.timestamp.field.name": "sys_updated_on",
@@ -140,11 +202,10 @@ table.whitelist.`<table config id>`.partition.fields | none | Only valid for par
 
 #### How to Build
 
-This connector has a gradle configuration file. You can create a bundled JAR with the following gradle command:
-```
-[millies:~/Documents/ibm-github/cmas-portals/servicenow-connector-repos/servicenow-connector]$ ./gradlew shadowJar
-[millies:~/Documents/ibm-github/cmas-portals/servicenow-connector-repos/servicenow-connector]$ ls ./build/libs
-servicenow-connector-1.0-SNAPSHOT-all.jar
-[millies:~/Documents/ibm-github/cmas-portals/servicenow-connector-repos/servicenow-connector]$
+This connector has a Gradle configuration file. You can create a bundled JAR with the following Gradle command:
 
+```
+$ ./gradlew shadowJar
+$ ls ./build/libs
+servicenow-connector-1.0-SNAPSHOT-all.jar
 ```

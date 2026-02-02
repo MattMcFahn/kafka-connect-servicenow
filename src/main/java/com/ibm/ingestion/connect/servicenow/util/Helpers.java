@@ -86,16 +86,37 @@ public final class Helpers {
         while(keys.hasNext()) {
             String key = keys.next();
             if(key != null && !key.trim().isEmpty()) {
-                if(record.isNull(key)) {
-                    value.put(underscoresForPeriods(key), null);
+                Object rawValue = record.isNull(key) ? null : record.get(key);
+
+                Object finalValue;
+
+                if (rawValue instanceof JSONObject) {
+                    JSONObject jsonObj = (JSONObject) rawValue;
+                    // Convert JSONObject to Map<String,Object>
+                    finalValue = jsonObjectToMap(jsonObj);
                 } else {
-                    // TODO(millies): potentially enhance to interrogate the values to determine data types?
-                    value.put(underscoresForPeriods(key), record.get(key).toString());
+                    finalValue = rawValue; // primitive or string
                 }
+                value.put(underscoresForPeriods(key), finalValue);
             }
         }
 
         return value;
+    }
+
+    private static java.util.Map<String,Object> jsonObjectToMap(JSONObject json) {
+        java.util.Map<String,Object> map = new java.util.HashMap<>();
+        Iterator<String> keys = json.keys();
+        while (keys.hasNext()) {
+            String k = keys.next();
+            Object v = json.get(k);
+            if (v instanceof JSONObject) {
+                map.put(k, jsonObjectToMap((JSONObject) v));
+            } else {
+                map.put(k, v);
+            }
+        }
+        return map;
     }
 
     public static Schema buildSchemaForKey(List<String> fields) {

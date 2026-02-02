@@ -242,6 +242,12 @@ public class ServiceNowSourceConnectorConfig extends AbstractConfig {
             = "ServiceNow Client Connection Pool Keep Alive Duration (seconds)";
     public static final int SERVICENOW_CLIENT_KEEP_ALIVE_DURATION_SECONDS_DEFAULT = 60;
 
+    public static final String SERVICENOW_CLIENT_DISPLAY_VALUE = "servicenow.client.display.value";
+    private static final String SERVICENOW_CLIENT_DISPLAY_VALUE_DOC
+            = "Determines the format of field values returned by ServiceNow. Options: 'false' (default, sys_id values only), 'true' (display values only), 'all' (both sys_id and display values). When set to 'all', both the internal value and display value are returned for reference fields.";
+    private static final String SERVICENOW_CLIENT_DISPLAY_VALUE_DISPLAY
+            = "ServiceNow Display Value Mode";
+    public static final String SERVICENOW_CLIENT_DISPLAY_VALUE_DEFAULT = "false";
 
     private static void addServiceNowClientOptions(ConfigDef config) {
         int orderInGroup = 0;
@@ -380,6 +386,16 @@ public class ServiceNowSourceConnectorConfig extends AbstractConfig {
                 ++orderInGroup,
                 ConfigDef.Width.LONG,
                 SERVICENOW_CLIENT_KEEP_ALIVE_DURATION_SECONDS_DISPLAY
+        ).define(
+                SERVICENOW_CLIENT_DISPLAY_VALUE,
+                ConfigDef.Type.STRING,
+                SERVICENOW_CLIENT_DISPLAY_VALUE_DEFAULT,
+                ConfigDef.Importance.MEDIUM,
+                SERVICENOW_CLIENT_DISPLAY_VALUE_DOC,
+                SERVICENOW_CLIENT_GROUP,
+                ++orderInGroup,
+                ConfigDef.Width.MEDIUM,
+                SERVICENOW_CLIENT_DISPLAY_VALUE_DISPLAY
         );
     }
 
