@@ -36,6 +36,7 @@ public class ServiceNowTableApiClient {
     private final int UNBOUNDED_NUMBER_OF_RETRIES = -1;
     private int MAX_RETRIES;
     private int RETRY_BACKOFF_MS;
+    private String DISPLAY_VALUE;
 
     /**
      * EXAMPLE: https://ibmmhasdev2.service-now.com
@@ -61,6 +62,12 @@ public class ServiceNowTableApiClient {
          * Comma separated list of fields to return.
          */
         public static final String FIELDS = "sysparm_fields";
+        
+        /**
+         * Determines whether to return the display value, actual value, or both for all fields.
+         * Options: true (display values), false (actual values), all (both)
+         */
+        public static final String DISPLAY_VALUE = "sysparm_display_value";
     }
 
     private JSONObject _currentJwtToken;
@@ -84,6 +91,28 @@ public class ServiceNowTableApiClient {
 
         this.MAX_RETRIES = this.getRequiredConfigInt(ServiceNowSourceConnectorConfig.SERVICENOW_CLIENT_MAX_RETRIES);
         this.RETRY_BACKOFF_MS = this.getRequiredConfigInt(ServiceNowSourceConnectorConfig.SERVICENOW_CLIENT_RETRY_BACKOFF_SECONDS) * 1000;
+        this.DISPLAY_VALUE = this.getConfigOrDefault(ServiceNowSourceConnectorConfig.SERVICENOW_CLIENT_DISPLAY_VALUE, 
+                ServiceNowSourceConnectorConfig.SERVICENOW_CLIENT_DISPLAY_VALUE_DEFAULT);
+        
+        // Validate display value setting
+        if (!isValidDisplayValue(this.DISPLAY_VALUE)) {
+            LOG.warn("Invalid display value setting '{}'. Valid values are 'true', 'false', or 'all'. Defaulting to 'false'.", 
+                    this.DISPLAY_VALUE);
+            this.DISPLAY_VALUE = "false";
+        }
+        
+        LOG.info("ServiceNow client initialized with display_value mode: {}", this.DISPLAY_VALUE);
+    }
+    
+    /**
+     * Validates if the provided display value is one of the allowed values.
+     * @param displayValue The display value to validate
+     * @return true if valid, false otherwise
+     */
+    private boolean isValidDisplayValue(String displayValue) {
+        return "true".equalsIgnoreCase(displayValue) || 
+               "false".equalsIgnoreCase(displayValue) || 
+               "all".equalsIgnoreCase(displayValue);
     }
 
     public void close() {
@@ -137,6 +166,10 @@ public class ServiceNowTableApiClient {
         if(fields != null) {
             queryArgs.add(String.format("%s=%s", ServiceNowParams.FIELDS, String.join(",", fields)));
         }
+        
+        // Add display_value parameter
+        queryArgs.add(String.format("%s=%s", ServiceNowParams.DISPLAY_VALUE, this.DISPLAY_VALUE));
+        LOG.debug("Adding sysparm_display_value={} to API request", this.DISPLAY_VALUE);
 
         requestUrl.append("?");
         requestUrl.append(String.join("&", queryArgs));

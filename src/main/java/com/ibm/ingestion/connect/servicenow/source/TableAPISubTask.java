@@ -49,6 +49,33 @@ public class TableAPISubTask {
     private TableQueryPartition SOURCE_PARTITION;
     private IServiceNowTablePartitioner DESTINATION_PARTITIONER;
 
+    private String extractStringField(JSONObject record, String fieldName) {
+        Object field = record.get(fieldName);
+
+        if (field instanceof String) {
+            return (String) field;
+        }
+
+        if (field instanceof JSONObject) {
+            JSONObject obj = (JSONObject) field;
+            if (obj.has("value")) {
+                return obj.getString("value");
+            }
+        }
+
+        throw new ConnectException(
+                "Unsupported format for field '" + fieldName + "': " + field
+        );
+    }
+
+    /**
+     * Extracts and parses a ServiceNow UTC timestamp safely.
+     */
+    private LocalDateTime extractTimestampField(JSONObject record, String fieldName) {
+        String rawTimestamp = extractStringField(record, fieldName);
+        return Helpers.parseServiceNowDateTimeUtc(rawTimestamp);
+    }
+
     private static String tryGetConfig(ServiceNowTableAPISourceTaskConfig config, String key, String defaultValue) {
         try {
             return config.getString(key);
@@ -93,7 +120,7 @@ public class TableAPISubTask {
         if(this.TARGET_TOPIC == null || this.TARGET_TOPIC.trim().isEmpty()) {
             throw new ConnectException(String.format("Must specify the topic/stream prefix to which records should be published. Configuration [%s]", ServiceNowSourceConnectorConfig.STREAM_PREFIX));
         } else {
-            this.TARGET_TOPIC = this.TARGET_TOPIC.replaceAll("\\.+$", "") + "." + tableKey;
+            this.TARGET_TOPIC = this.TARGET_TOPIC.replaceAll("\\.+$", "") + tableKey;
         }
 
         final String FIELDS_KEY = String.format("table.whitelist.%s.fields", tableKey);
@@ -151,9 +178,8 @@ public class TableAPISubTask {
                 this._cachedValueSchema = buildSchemaFromSimpleJsonRecord(result);
             }
 
-            String rawTimestamp = result.getString(this.TIMESTAMP_COLUMN_FIELD);
-            lastProcessedTimestamp = Helpers.parseServiceNowDateTimeUtc(rawTimestamp);
-            lastProcessedIdentifier = result.getString(this.IDENTIFIER_COLUMN_FIELD);
+            lastProcessedTimestamp = extractTimestampField(result, this.TIMESTAMP_COLUMN_FIELD);
+            lastProcessedIdentifier = extractStringField(result, this.IDENTIFIER_COLUMN_FIELD);
 
             SourceRecord record = SourceRecordBuilder.Builder(DESTINATION_PARTITIONER)
                     .withSourcePartition(this.SOURCE_PARTITION.getPartition())
