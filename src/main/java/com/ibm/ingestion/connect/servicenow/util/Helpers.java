@@ -57,48 +57,20 @@ public final class Helpers {
     }
 
     /**
-     * Creates a schema for a display_value object with nested structure.
-     */
-    private static Schema createDisplayValueSchema() {
-        return SchemaBuilder.struct()
-                .name("com.servicenow.DisplayValue")
-                .optional()
-                .field("display_value", Schema.OPTIONAL_STRING_SCHEMA)
-                .field("value", Schema.OPTIONAL_STRING_SCHEMA)
-                .build();
-    }
-
-    /**
-     * Converts a display_value JSONObject to a Kafka Connect Struct.
-     */
-    private static Struct createDisplayValueStruct(Schema schema, JSONObject obj) {
-        Struct struct = new Struct(schema);
-
-        // Handle display_value field
-        if (obj.has("display_value") && !obj.isNull("display_value")) {
-            Object displayValue = obj.get("display_value");
-            struct.put("display_value", displayValue != null ? displayValue.toString() : null);
-        } else {
-            struct.put("display_value", null);
-        }
-
-        // Handle value field
-        if (obj.has("value") && !obj.isNull("value")) {
-            Object value = obj.get("value");
-            struct.put("value", value != null ? value.toString() : null);
-        } else {
-            struct.put("value", null);
-        }
-
-        return struct;
-    }
-
-    /**
      * Builds a Kafka Connect Schema from a JSONObject record.
-     * Dynamically creates nested STRUCT schemas for fields that contain display_value objects.
+     *
+     * When display_value=all, fields with nested objects are FLATTENED:
+     * - Original field contains the "value"
+     * - New field "{field}_display_value" contains the "display_value"
+     *
+     * Example:
+     *   Input:  {"user": {"value": "user-123", "display_value": "John Doe"}}
+     *   Output: {"user": "user-123", "user_display_value": "John Doe"}
+     *
+     * This approach is backward compatible - existing consumers continue to work!
      *
      * @param record The JSONObject to build a schema from
-     * @return A Kafka Connect Schema with proper nesting for display_value fields
+     * @return A Kafka Connect Schema with flattened display_value fields
      */
     public static Schema buildSchemaFromSimpleJsonRecord(JSONObject record) {
 
@@ -110,19 +82,22 @@ public final class Helpers {
             if(key != null && !key.trim().isEmpty()) {
                 String fieldName = underscoresForPeriods(key);
 
-                if (record.isNull(key)) {
-                    // If null, default to string (we can't determine type)
-                    builder.field(fieldName, Schema.OPTIONAL_STRING_SCHEMA);
-                } else {
+                if (!record.isNull(key)) {
                     Object fieldValue = record.get(key);
 
                     if (isDisplayValueObject(fieldValue)) {
-                        // Create nested struct for display_value objects
-                        builder.field(fieldName, createDisplayValueSchema());
+                        // For display_value objects, create TWO fields:
+                        // 1. Original field name with the "value"
+                        builder.field(fieldName, Schema.OPTIONAL_STRING_SCHEMA);
+                        // 2. New field with "_display_value" suffix
+                        builder.field(fieldName + "_display_value", Schema.OPTIONAL_STRING_SCHEMA);
                     } else {
                         // Simple string field
                         builder.field(fieldName, Schema.OPTIONAL_STRING_SCHEMA);
                     }
+                } else {
+                    // Null field - default to string
+                    builder.field(fieldName, Schema.OPTIONAL_STRING_SCHEMA);
                 }
             }
         }
@@ -132,11 +107,14 @@ public final class Helpers {
 
     /**
      * Builds a Kafka Connect Struct from a JSONObject.
-     * Properly handles both simple string values and nested display_value objects.
+     *
+     * Flattens display_value objects into two separate fields:
+     * - {field}: contains the "value"
+     * - {field}_display_value: contains the "display_value"
      *
      * @param schema The Kafka Connect Schema
      * @param record The JSONObject containing the data
-     * @return A populated Struct with nested structures for display_value fields
+     * @return A populated Struct with flattened display_value fields
      */
     public static Struct buildStruct(Schema schema, JSONObject record) {
         Struct struct = new Struct(schema);
@@ -151,13 +129,26 @@ public final class Helpers {
                     struct.put(fieldName, null);
                 } else {
                     Object fieldValue = record.get(key);
-                    Schema fieldSchema = schema.field(fieldName).schema();
 
                     if (isDisplayValueObject(fieldValue)) {
-                        // Create nested struct for display_value object
                         JSONObject displayValueObj = (JSONObject) fieldValue;
-                        Struct nestedStruct = createDisplayValueStruct(fieldSchema, displayValueObj);
-                        struct.put(fieldName, nestedStruct);
+
+                        // Extract "value" for the original field
+                        if (displayValueObj.has("value") && !displayValueObj.isNull("value")) {
+                            struct.put(fieldName, displayValueObj.get("value").toString());
+                        } else {
+                            struct.put(fieldName, null);
+                        }
+
+                        // Extract "display_value" for the new field
+                        String displayFieldName = fieldName + "_display_value";
+                        if (schema.field(displayFieldName) != null) {
+                            if (displayValueObj.has("display_value") && !displayValueObj.isNull("display_value")) {
+                                struct.put(displayFieldName, displayValueObj.get("display_value").toString());
+                            } else {
+                                struct.put(displayFieldName, null);
+                            }
+                        }
                     } else {
                         // Simple string value
                         struct.put(fieldName, fieldValue.toString());

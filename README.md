@@ -1,9 +1,12 @@
 # Kafka Connect ServiceNow Source Connector
 
-This module is a [Kafka Connect](https://docs.confluent.io/current/connect/index.html)
-Source Connector for the [ServiceNow Table API](https://developer.servicenow.com/app.do#!/rest_api_doc?v=madrid&id=c_TableAPI).
+This module is a [Kafka Connect](https://docs.confluent.io/current/connect/index.html) Source Connector for the [ServiceNow Table API](https://developer.servicenow.com/app.do#!/rest_api_doc?v=madrid&id=c_TableAPI).
 It provides facilities for polling arbitrary ServiceNow tables via its Table API and publishing
 detected changes to a [Kafka topic](https://kafka.apache.org/documentation/#intro_topics).
+
+It forks the original [connector developed by IBM](https://github.com/IBM/kafka-connect-servicenow), and has been updated 
+to pull **display values** from ServiceNow, as well as the internal values, in a format that maintains backwards 
+compatibility for schemas.
 
 This module is agnostic to the ServiceNow model being used as all the table names, and fields used
 are provided via configuration.
@@ -12,11 +15,18 @@ Going forward in this readme `source_table` will be used to refer to a table acc
 ServiceNow TableAPI and `table_config_key` will be used to refer to an identifier representing a
 particular `source_table` within the Kafka Connect ServiceNow Source Connector's configuration.
 
-### Specifying Source Tables
+## Table of Contents
+- [Specifying Source Tables](#specifying-source-tables)
+- [Configuration](#configuration)
+- [Display Value Feature](#display-value-feature)
+- [Building](#how-to-build)
 
-The source table configuration is provided by first specifying a comma-delimited list of
-`table_config_key(s)`. Each `table_config_key` is used to specify `source table` specific
-configuration properties.
+---
+
+## Specifying Source Tables
+
+The source table configuration is provided by first specifying a comma-delimited list of `table_config_key(s)`. 
+Each `table_config_key` is used to specify `source table` specific configuration properties.
 
 **Example:**
 ```json
@@ -30,7 +40,7 @@ configuration properties.
 In the above example, the Source Connector is going to look for `source table` specific configurations
 using the `table_config_keys` of `case` and `changerequest`.
 
-#### Source Table Constraints
+### Source Table Constraints
 
 The current implementation requires the following constraints to be satisfied in order to poll it.
 
@@ -47,12 +57,13 @@ The `ServiceNowSourceConnector` class evaluates the connector configuration and 
 many `ServiceNowTableAPISourceTask` instances it needs to configure. It returns the initialized
 `ServiceNowTableAPISourceTaskConfig` objects to `kafka connect`.
 
-#### Destination Kafka Topic Partitioning
+### Destination Kafka Topic Partitioning
+
 This Source Connector supports several destination partitioning types.
 
 `table.whitelist.<table config id>.partition.type`
 
-###### Values:
+**Values:**
 
 - `default` - This type forces all messages to be on partition `0`. Useful for testing.
 - `round-robin` - This type assigns messages to partitions in a round-robin fashion.
@@ -60,38 +71,43 @@ This Source Connector supports several destination partitioning types.
 which determines the destination partition. This is useful if you need to guarantee
 messages about a particular entity go to the same partition.
 
-#### Connector Configuration
+---
+
+## Configuration
+
+### Connector Configuration
 
 Configuration | Default | Notes
 :------- | :------- | :-------
 table.whitelist | none | A list of source table keys to use in subsequent, table specific, configurations. These keys are also used when calculating the `target kafka topic` for a particular `source table`.
 topic.prefix | none | The prefix to use when publishing messages for source tables. For example, if the prefix is `ibm.test.servicenow`, and the `source table key` is `changerequest`, then the calculated topic will be `ibm.test.servicenow.changerequest`. This is a required setting and has no default value provided.
 
-#### ServiceNow Table API Authentication Configuration
+### ServiceNow Table API Authentication Configuration
+
 Configuration | Default | Notes
 :------- | :------- | :-------
 servicenow.client.oauth.path | `/oauth_token.do` | The path to use when logging into the ServiceNow instance using OAuth.
 servicenow.client.oauth.clientid | none | The OAuth Client ID to use when authenticating. This is a required field and no default is provided.
 servicenow.client.oauth.clientsecret | none | The OAuth Client Secret to use when authenticating.
 servicenow.client.oauth.username | none | The OAuth User Name to use when authenticating.
-servicenow.client.oauth.userpassword | none | The OAuth User Password to use when Authenticating.
+servicenow.client.oauth.userpassword | none | The OAuth User Password to use when authenticating.
 
-#### Connector to ServiceNow HTTP Client Configuration
+### ServiceNow HTTP Client Configuration
 
 ServiceNow Client Implementation: `com.ibm.ingestion.http.ServiceNowTableApiClient`
 
 Configuration  | Default | Notes
-:------------- | :------------ | :------------
-servicenow.client.connection.timeout.seconds | 30 | The amount of time in seconds to wait for establishing a connection.
-servicenow.client.request.timeout.seconds | 30 | The overall timeout for any call. This configuration is independent of the read, and write timeouts.
-servicenow.client.read.timeout.seconds | 30 | The amount of time in seconds to wait for a read operation to complete.
-servicenow.client.request.retries.max | none | The number of times an HTTP call will be retried for an IO exception. If this setting is excluded, then the task will continuously retry HTTP calls.
-servicenow.client.request.retries.backoff.seconds | 30 | The amount of time delayed between retries.
-servicenow.client.connection.pool.max.idle.connections | 2 | The maximum number of idle connections to hold in the connection pool.
-servicenow.client.connection.pool.keep.alive.duration.seconds | 60 | The amount of time to hold onto idle connections in the connection pool.
-servicenow.client.display.value | `false` | **NEW:** Controls the format of field values returned from ServiceNow. Options: `false` (default, returns sys_id values only), `true` (returns display values only), `all` (returns both sys_id and display values). When set to `all`, reference fields will include both the internal sys_id and the human-readable display value. See [Display Value Configuration](#display-value-configuration) for more details.
+:------------- |:--------| :------------
+servicenow.client.connection.timeout.seconds | `30`    | The amount of time in seconds to wait for establishing a connection.
+servicenow.client.request.timeout.seconds | `30`    | The overall timeout for any call. This configuration is independent of the read, and write timeouts.
+servicenow.client.read.timeout.seconds | `30`     | The amount of time in seconds to wait for a read operation to complete.
+servicenow.client.request.retries.max | `none`    | The number of times an HTTP call will be retried for an IO exception. If this setting is excluded, then the task will continuously retry HTTP calls.
+servicenow.client.request.retries.backoff.seconds | `30`      | The amount of time delayed between retries.
+servicenow.client.connection.pool.max.idle.connections | `2`       | The maximum number of idle connections to hold in the connection pool.
+servicenow.client.connection.pool.keep.alive.duration.seconds | `60`      | The amount of time to hold onto idle connections in the connection pool.
+servicenow.client.display.value | `false` | (Important) Controls the format of field values returned from ServiceNow. Options: `false` (default, returns sys_id values only), `true` (returns display values only), `all` (returns both sys_id and display values in flattened format). See [Display Value Feature](#display-value-feature) for detailed information.
 
-#### Connector Subtask Configuration
+### Connector Subtask Configuration
 
 Subtask Implementation: `com.ibm.ingestion.connect.servicenow.source.TableAPISubTask`
 
@@ -109,27 +125,51 @@ table.whitelist.`<table config id>`.fields | none | A comma-delimited list of fi
 table.whitelist.`<table config id>`.partition.type | none | The partitioning type to use when selecting destination Kafka topic partitions for records. See the readme section about partitioning types. When this setting is excluded, the `default` partition type is used.
 table.whitelist.`<table config id>`.partition.fields | none | Only valid for partitioning-type of `field-based`. This setting determines the fields on the `source table` to use as the partitioning key for selecting destination Kafka topic partitions for records.
 
-### Display Value Configuration
+---
+
+## Display Value Feature
 
 The `servicenow.client.display.value` parameter controls how ServiceNow returns field values, particularly for reference fields (fields that reference other tables).
 
-#### Understanding Display Values
+### Understanding Display Values
 
 In ServiceNow:
-- **Actual values** are typically sys_ids (32-character unique identifiers like `d71f7935c0a8016700802b64c67c11c6`)
-- **Display values** are human-readable text (like "John Doe" or "Hardware Issue")
+- **Actual values** (sys_ids) are 32-character unique identifiers like `d71f7935c0a8016700802b64c67c11c6`
+- **Display values** are human-readable text like "John Doe" or "High Priority"
 
-#### Configuration Options
+### Configuration Options
 
-| Value | Behavior | Use Case | Example Response |
-|-------|----------|----------|------------------|
-| `false` (default) | Returns only actual values (sys_ids) | When you need the raw database values for processing or lookups | `{"assigned_to": "d71f7935c0a8016700802b64c67c11c6"}` |
-| `true` | Returns only display values | When you need human-readable data and don't need the sys_ids | `{"assigned_to": "John Doe"}` |
-| `all` | Returns both actual and display values | When you need both the sys_id for lookups AND the display value for readability | `{"assigned_to": {"display_value": "John Doe", "value": "d71f7935c0a8016700802b64c67c11c6"}}` |
+| Value | Behavior | Kafka Message Format | Use Case |
+|-------|----------|---------------------|----------|
+| `false` (default) | Returns only sys_id values | `{"assigned_to": "d71f7935c0a8..."}` | When you only need internal IDs for lookups |
+| `true` | Returns only display values | `{"assigned_to": "John Doe"}` | When you only need human-readable values |
+| `all` | **Returns both values (flattened)** | `{"assigned_to": "d71f7935c0a8...", "assigned_to_display_value": "John Doe"}` | **Recommended** - Get both ID and display name |
 
-#### Example Configuration
+### How `display_value=all` Works (Flattened Format)
 
-**To get all information (both sys_ids and display values):**
+When `display_value=all` is configured, reference fields are **flattened** into two separate fields:
+
+**ServiceNow API Response:**
+```json
+{
+  "assigned_to": {
+    "value": "user-12345",
+    "display_value": "John Doe"
+  }
+}
+```
+
+**Kafka Message (Flattened):**
+```json
+{
+  "assigned_to": "user-12345",
+  "assigned_to_display_value": "John Doe"
+}
+```
+
+### Configuration Examples
+
+#### Get Both Values (Recommended)
 ```json
 {
   "name": "servicenow-connector",
@@ -137,62 +177,47 @@ In ServiceNow:
     "servicenow.client.base.uri": "https://your-instance.service-now.com",
     "servicenow.client.display.value": "all",
     "table.whitelist": "incident",
-    ...other configuration...
+    "topic.prefix": "servicenow"
   }
 }
 ```
 
-**Default behavior (only sys_ids):**
+#### Default (Only sys_ids)
+
 ```json
 {
   "name": "servicenow-connector",
   "config": {
     "servicenow.client.base.uri": "https://your-instance.service-now.com",
-    "servicenow.client.display.value": "false",
-    ...other configuration...
+    "table.whitelist": "incident",
+    "topic.prefix": "servicenow"
   }
 }
 ```
 
-Or simply omit the parameter to use the default:
-```json
-{
-  "name": "servicenow-connector",
-  "config": {
-    "servicenow.client.base.uri": "https://your-instance.service-now.com",
-    ...other configuration...
-  }
-}
-```
-
-#### Recommendation
-
-For most use cases, we recommend using `"all"` to preserve both the internal sys_id (for data integrity and lookups) and the display value (for human readability and reporting).
-
-### Complete Configuration Example
+## Complete Configuration Example
 
 ```json
 {
-    "name": "milz-servicenow-connector",
+    "name": "servicenow-incident-connector",
     "config": {
-        "servicenow.client.base.uri": "https://ibmmhasdev4.service-now.com",
-        "servicenow.client.oauth.clientid": "clientid",
-        "servicenow.client.oauth.clientsecret": "clientsecret",
-        "servicenow.client.oauth.username": "someusername",
-        "servicenow.client.oauth.userpassword": "someuserpassword",
+        "servicenow.client.base.uri": "https://yourinstance.service-now.com",
+        "servicenow.client.oauth.clientid": "your-client-id",
+        "servicenow.client.oauth.clientsecret": "your-client-secret",
+        "servicenow.client.oauth.username": "your-username",
+        "servicenow.client.oauth.userpassword": "your-password",
         "servicenow.client.display.value": "all",
-        "table.whitelist": "case",
-        "table.whitelist.case.name": "sn_customerservice_case",
-        "table.whitelist.case.timestamp.field.name": "sys_updated_on",
-        "table.whitelist.case.identifier.field.name": "number",
-        "table.whitelist.case.fields": "number,sys_updated_on",
-        "table.whitelist.case.partition.type": "default",
-        "table.whitelist.changerequest.name": "change_request",
-        "table.whitelist.changerequest.timestamp.field.name": "sys_updated_on",
-        "table.whitelist.changerequest.identifier.field.name": "number",
-        "table.whitelist.changerequest.partition.type": "field-based",
-        "table.whitelist.changerequest.partition.fields": "number",
-        "topic.prefix": "test.milz.servicenowconnector1",
+        "table.whitelist": "incident,change_request",
+        "table.whitelist.incident.name": "incident",
+        "table.whitelist.incident.timestamp.field.name": "sys_updated_on",
+        "table.whitelist.incident.identifier.field.name": "number",
+        "table.whitelist.incident.partition.type": "field-based",
+        "table.whitelist.incident.partition.fields": "number",
+        "table.whitelist.change_request.name": "change_request",
+        "table.whitelist.change_request.timestamp.field.name": "sys_updated_on",
+        "table.whitelist.change_request.identifier.field.name": "number",
+        "table.whitelist.change_request.partition.type": "default",
+        "topic.prefix": "servicenow",
         "timestamp.initial.query.hours.ago": 720,
         "tasks.max": 1,
         "connector.class": "com.ibm.ingestion.connect.servicenow.ServiceNowSourceConnector"
@@ -200,12 +225,45 @@ For most use cases, we recommend using `"all"` to preserve both the internal sys
 }
 ```
 
-#### How to Build
+---
+
+## How to Build
 
 This connector has a Gradle configuration file. You can create a bundled JAR with the following Gradle command:
 
+```bash
+./gradlew shadowJar
 ```
-$ ./gradlew shadowJar
-$ ls ./build/libs
-servicenow-connector-1.0-SNAPSHOT-all.jar
+
+The shadow JAR will be created in:
 ```
+build/libs/servicenow-connector-1.0-SNAPSHOT-all.jar
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+./gradlew test
+```
+
+---
+
+## Troubleshooting
+
+### Issue: Not seeing display values in Kafka
+
+**Check:**
+1. Verify `servicenow.client.display.value` is set to `"all"` in your connector configuration
+2. Restart the connector after configuration changes
+3. Check connector logs for the message: `ServiceNow client initialized with display_value mode: all`
+
+### Issue: Field names have underscores instead of periods
+
+**This is expected behavior.** ServiceNow field names like `parent.incident` are converted to `parent__incident` to comply with Kafka Connect schema naming requirements.
+
+### Issue: Timestamp or identifier fields not working
+
+**Ensure** these fields are specified correctly in your configuration and exist in the ServiceNow table. The connector extracts the "value" from display_value objects for these critical fields.
+
+---
