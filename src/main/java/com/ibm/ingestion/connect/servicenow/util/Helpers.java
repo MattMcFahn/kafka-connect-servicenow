@@ -6,21 +6,55 @@ import org.apache.kafka.connect.data.Struct;
 import org.json.JSONObject;
 
 import java.time.LocalDateTime;
-
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
 public final class Helpers {
 
-    private static DateTimeFormatter ServiceNowDateTimeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssX");
+    // ServiceNow internal format: "2026-02-03 14:40:07"
+    private static DateTimeFormatter ServiceNowInternalFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssX");
+
+    // ServiceNow display format: "03/02/2026 14:40:07" (when display_value=true)
+    private static DateTimeFormatter ServiceNowDisplayFormat = DateTimeFormatter.ofPattern("MM/dd/yyyy HH:mm:ssX");
+
+    /**
+     * @param raw The timestamp string from ServiceNow
+     * @return LocalDateTime in UTC
+     * @throws DateTimeParseException if the timestamp cannot be parsed in either format
+     */
     public static LocalDateTime parseServiceNowDateTimeUtc(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            throw new IllegalArgumentException("Timestamp string cannot be null or empty");
+        }
+
+        // Ensure timezone indicator
         if(!raw.endsWith("Z")) {
             raw = raw + "Z"; // should consider this as UTC time.
         }
 
-        return LocalDateTime.parse(raw, ServiceNowDateTimeFormat);
+        // Try internal format first (more common)
+        try {
+            return LocalDateTime.parse(raw, ServiceNowInternalFormat);
+        } catch (DateTimeParseException e) {
+            // If internal format fails, try display format
+            try {
+                return LocalDateTime.parse(raw, ServiceNowDisplayFormat);
+            } catch (DateTimeParseException e2) {
+                // If both fail, throw a helpful error
+                throw new DateTimeParseException(
+                    String.format(
+                        "Could not parse timestamp '%s'. Expected either internal format (yyyy-MM-dd HH:mm:ss) " +
+                        "or display format (MM/dd/yyyy HH:mm:ss). Original errors: [Internal: %s] [Display: %s]",
+                        raw, e.getMessage(), e2.getMessage()
+                    ),
+                    raw,
+                    0
+                );
+            }
+        }
     }
 
     public static List<String> commaDelimitedToList(String commaDelimited) {
